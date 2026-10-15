@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>本物洋食團體點餐</title>
+<meta name="description" content="看照片點餐，自動計算金額">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Noto+Sans+TC:wght@400;500;700;900&display=swap">
+<script>
+/* ===== 設定：把 Apps Script 部署後的網址貼在引號裡（結尾是 /exec） ===== */
+const SCRIPT_URL = "";
+</script>
+<style>
+:root{
+  --paper:#FFF8F3; --card:#FFFFFF; --ink:#3A2A26; --muted:#8C756D; --line:#F1DCD3;
+  --coral:#E8583F; --coral-ink:#FFFFFF; --coral-soft:#FCE6DE; --leaf:#4E9A5B; --warn:#C2410C;
+  --f-body:"Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif;
+  --f-num:"Fredoka","Noto Sans TC",system-ui,sans-serif;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root{
+  --paper:#1E1715; --card:#2A211E; --ink:#F6E9E3; --muted:#BFA79E; --line:#43342F;
+  --coral:#FF7A5F; --coral-ink:#1E1715; --coral-soft:#3D2620; --leaf:#7CC48A; --warn:#FB923C; color-scheme:dark}}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.55;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  padding-top:env(safe-area-inset-top,0px);padding-bottom:calc(110px + env(safe-area-inset-bottom,0px))}
+img{max-width:100%}
+[hidden]{display:none!important}
+.wrap{max-width:1040px;margin:0 auto}
+button{font:inherit;color:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent}
+button:focus-visible,input:focus-visible,textarea:focus-visible{outline:3px solid var(--coral);outline-offset:2px}
+.num{font-family:var(--f-num);font-variant-numeric:tabular-nums}
+
+header.top{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px;padding-block:22px 10px}
+.brand small{display:block;color:var(--coral);font-weight:700;letter-spacing:.18em;font-size:12px}
+.brand h1{margin:2px 0 0;font-size:clamp(22px,4.6vw,32px);font-weight:900;text-wrap:balance;line-height:1.2}
+.brand p{margin:4px 0 0;color:var(--muted);font-size:13.5px}
+.status{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:700;padding:4px 10px;border-radius:999px;background:var(--coral-soft);color:var(--coral)}
+.status.closed{background:var(--line);color:var(--muted)}
+.demo{margin:8px 0 0;font-size:13px;font-weight:700;color:var(--warn);border:1.5px dashed var(--warn);border-radius:10px;padding:8px 12px}
+
+nav.cats{position:sticky;top:0;z-index:5;background:var(--paper);display:flex;gap:6px;overflow-x:auto;padding-block:10px;scrollbar-width:none;border-bottom:1px solid var(--line);margin-inline:-4px;padding-inline:4px}
+nav.cats::-webkit-scrollbar{display:none}
+nav.cats a{flex:none;text-decoration:none;color:var(--ink);font-weight:700;font-size:14px;padding:6px 12px;border-radius:999px;background:var(--card);border:1.5px solid var(--line)}
+.howto{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 4px;font-size:13.5px;color:var(--muted)}
+.howto span{background:var(--card);border:1px dashed var(--line);padding:4px 10px;border-radius:8px}
+.howto b{color:var(--coral)}
+
+section.cat{padding-top:18px;scroll-margin-top:60px}
+section.cat>h2{display:flex;align-items:baseline;gap:10px;margin:0 0 4px;font-size:22px;font-weight:900}
+section.cat>h2 em{font-style:normal;font-family:var(--f-num);color:var(--coral);font-size:13px;letter-spacing:.14em;font-weight:600}
+.cat-note{margin:0 0 10px;color:var(--muted);font-size:13px}
+h3.sub{margin:16px 0 8px;font-size:14px;color:var(--coral);font-weight:700;display:flex;align-items:center;gap:8px}
+h3.sub::after{content:"";flex:1;border-top:2px dotted var(--line)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px}
+.grid.small{grid-template-columns:repeat(auto-fill,minmax(130px,1fr))}
+.dish{background:var(--card);border:1.5px solid var(--line);border-radius:16px;padding:10px;display:flex;flex-direction:column;gap:6px;min-width:0}
+.dish.on{border-color:var(--coral);box-shadow:0 0 0 2px var(--coral-soft)}
+.dish .ph{aspect-ratio:1;width:100%;border-radius:50%;overflow:hidden;background:var(--coral-soft)}
+.grid.small .ph{border-radius:12px}
+.dish .ph img{width:100%;height:100%;object-fit:cover;display:block}
+.dish .nm{font-weight:700;font-size:14.5px;line-height:1.35;min-height:2.7em}
+.dish .tags{display:flex;gap:4px;flex-wrap:wrap}
+.tag{font-size:11.5px;font-weight:700;padding:1px 7px;border-radius:6px;background:var(--coral-soft);color:var(--coral)}
+.tag.veg{color:var(--leaf);background:transparent;border:1px solid var(--leaf)}
+.dish .row{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-top:auto}
+.price{font-family:var(--f-num);font-weight:700;font-size:19px;color:var(--coral)}
+.price::before{content:"$";font-size:13px;margin-right:1px}
+.step{display:flex;align-items:center;gap:2px}
+.step button{width:34px;height:34px;border-radius:50%;border:1.5px solid var(--coral);background:var(--card);color:var(--coral);font-size:19px;font-weight:700;line-height:1;display:grid;place-items:center;padding:0}
+.step button.add{background:var(--coral);color:var(--coral-ink)}
+.step .q{min-width:22px;text-align:center;font-family:var(--f-num);font-weight:700;font-size:16px}
+.big{display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:12.5px;color:var(--muted);border-top:1px dashed var(--line);padding-top:6px}
+.big .step button{width:28px;height:28px;font-size:16px}
+.closedmask .step button{opacity:.35;pointer-events:none}
+
+.cartbar{position:fixed;left:0;right:0;bottom:0;z-index:10;background:var(--ink);color:var(--paper);
+  padding:12px max(16px,env(safe-area-inset-right,0px)) calc(12px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+.cartbar .in{max-width:1040px;margin:0 auto;display:flex;align-items:center;gap:14px;justify-content:space-between}
+.cartbar .sum{display:flex;align-items:baseline;gap:10px;min-width:0}
+.cartbar .sum b{font-family:var(--f-num);font-size:26px}
+.cartbar .sum span{opacity:.75;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.btn{border:0;border-radius:999px;padding:11px 22px;font-weight:900;font-size:15px;background:var(--coral);color:var(--coral-ink);flex:none}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn.ghost{background:transparent;border:1.5px solid var(--line);color:var(--ink)}
+
+.sheet{position:fixed;inset:0;z-index:20;background:rgba(20,10,8,.45);display:flex;align-items:flex-end;justify-content:center}
+.sheet .panel{background:var(--paper);width:100%;max-width:560px;max-height:92%;overflow:auto;-webkit-overflow-scrolling:touch;border-radius:20px 20px 0 0;
+  padding:20px max(18px,env(safe-area-inset-right,0px)) calc(20px + env(safe-area-inset-bottom,0px)) max(18px,env(safe-area-inset-left,0px))}
+.panel h2{margin:0 0 12px;font-size:20px;font-weight:900}
+.lines{list-style:none;margin:0 0 12px;padding:0;border-top:1px solid var(--line)}
+.lines li{display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--line);font-size:14.5px}
+.lines li .x{color:var(--muted);font-family:var(--f-num)}
+.total{display:flex;justify-content:space-between;align-items:baseline;font-weight:900;font-size:16px;margin-bottom:14px}
+.total b{font-family:var(--f-num);font-size:26px;color:var(--coral)}
+.field{display:flex;flex-direction:column;gap:4px;margin-bottom:12px}
+.field label{font-weight:700;font-size:13.5px}
+.field label i{font-style:normal;color:var(--coral)}
+/* 16px 以上避免 iPhone 點輸入框時自動放大 */
+.field input,.field textarea{font:inherit;font-size:16px;color:var(--ink);background:var(--card);border:1.5px solid var(--line);border-radius:10px;padding:9px 12px;width:100%}
+.field textarea{min-height:60px;resize:vertical}
+.actions{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+.msg{font-size:13.5px;margin:0 0 10px;color:var(--muted)}
+.msg.err{color:var(--warn);font-weight:700}
+.ok{font-size:44px;line-height:1;color:var(--leaf);font-weight:900}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(90px + env(safe-area-inset-bottom,0px));z-index:30;background:var(--ink);color:var(--paper);padding:8px 16px;border-radius:999px;font-size:14px;font-weight:700}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto!important}}
+@media (max-width:420px){.grid,.grid.small{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.dish .nm{font-size:13.5px}.step button{width:32px;height:32px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <small>HONMONO・本物洋食</small>
+      <h1 id="evTitle">活動便當訂購</h1>
+      <p id="evSub">看照片點餐，系統自動計算金額。送出前請確認姓名。</p>
+    </div>
+    <span class="status" id="status">開放點餐中</span>
+  </header>
+  <p class="demo" id="demo" hidden>示範模式：尚未連接 Google 試算表，送出的訂單不會被記錄。</p>
+
+  <nav class="cats" id="cats"></nav>
+  <div class="howto">
+    <span><b>①</b> 按 ＋ 選主餐</span><span><b>②</b> 想吃多一點可點「加大」</span><span><b>③</b> 需要可加點配料、小食、飲品</span><span><b>④</b> 按下方「確認訂單」填姓名送出</span>
+  </div>
+  <main id="menu"></main>
+</div>
+
+<div class="cartbar">
+  <div class="in">
+    <div class="sum"><b class="num" id="cTotal">$0</b><span id="cCount">尚未選擇餐點</span></div>
+    <button class="btn" id="checkout" disabled>確認訂單</button>
+  </div>
+</div>
+<div class="sheet" id="sheet" hidden><div class="panel" id="panel" role="dialog" aria-modal="true"></div></div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+/* 菜單資料：[代號, 名稱, 價格, 標籤, 共用照片]。改價格時，Code.gs 裡的價格也要一起改 */
+const MENU=[
+ {id:"curry",t:"咖哩飯",en:"CURRY RICE",note:"日本職人秘傳熟成咖哩・飯類可加大 +$30",ext:30,subs:[{items:[
+  ["c_chicken","炸雞熟成咖哩",130],["c_beef","牛肉熟成咖哩",130],["c_pork","豬肉熟成咖哩",130],["c_veg","蔬菜熟成咖哩",130],["c_garden","歐風田園咖哩",170,["不辣素食","適合兒童"]]]}]},
+ {id:"don",t:"洋風丼飯",en:"DONBURI",note:"飯類可加大 +$30",ext:30,subs:[{items:[
+  ["d_oyako","沒有親子鑑定的親子丼飯",160],["d_beef","炙燒起司醬油牛五花丼",170],["d_pork","黑豆豉豬肉丼飯",150]]}]},
+ {id:"udon",t:"幸福烏龍麵",en:"UDON",note:"",subs:[{items:[
+  ["u_bacon","起司奶油培根烏龍麵",170],["u_pork","醬油豬肉炒烏龍麵",170],["u_curry","咖哩烏龍麵",120],["u_tsuke","醬油烏龍沾麵",120]]}]},
+ {id:"pasta",t:"日式義大利麵",en:"SPAGHETTI",note:"麵類可加大 +$50",ext:50,subs:[
+  {s:"濃郁蕃茄系",items:[["p_bolo","肉醬義大利麵",100],["p_spicy","辣起司肉醬義大利麵",140,["辣"]],["p_tuna","聖女鮪魚義大利麵",130],["p_tomchick","番茄炸雞義大利麵",160]]},
+  {s:"大蒜橄欖油系",items:[["p_garlic","激辛紅油濃蒜義大利麵",100,["辣"]],["p_wafu","和風培根義大利麵",130]]},
+  {s:"鰹魚昆布醬油系",items:[["p_hiro","培根廣島燒風義大利麵",150],["p_hirochick","炸雞廣島燒風義大利麵",170],["p_oyster","豆豉鮮蚵義大利麵",170,["辣"]]]},
+  {s:"濃厚雞白湯奶油系",items:[["p_creamtuna","奶油鮪魚義大利麵",130],["p_sesame","胡麻豬肉義大利麵",150],["p_citrus","柑橘炸雞義大利麵",170],["p_carbo","奶油培根義大利麵",160],["p_spicycheese","辣奶油起司炸雞義大利麵",170,["辣"]],["p_basil","羅勒奶油炸雞義大利麵",170]]},
+  {s:"田園系（素食）",items:[["p_vegcream","奶油蔬菜義大利麵",150,["素食"]],["p_vegcurry","辛香咖哩蔬食義大利麵",150,["素食"]]]}]},
+ {id:"side",t:"單點小食",en:"À LA CARTE",note:"",subs:[{items:[
+  ["a_fries","炸薯條",60],["a_salad","胡麻生鮮沙拉",80],["a_karaage","日式唐揚炸雞（6塊）",80],["a_fish","炸白肉魚排（2片）",90],["a_curryk","和風咖哩可樂餅（2片）",90],["a_cheesek","炙燒乳酪可樂餅（2片）",120]]}]},
+ {id:"top",t:"配料・湯品・飲料",en:"TOPPING & DRINKS",note:"配料要加在哪一份主餐，請在備註寫明",small:true,subs:[{items:[
+  ["t_cheese","起司片（2片）",40],["t_egg","溏心蛋",30],["t_onsen","溫泉蛋",30],["t_beef","牛肉",50],["t_pork","豬肉",50],["t_chicken","炸雞（3塊）",40],["t_veg","當季時蔬",40],["t_korokke","可樂餅（2片）",60],
+  ["t_miso","味噌湯",40],["t_tofu","豆花",30],["t_tea","瓶裝茶／汽水",25],["t_juice","果汁 250ml",60],["t_juiceL","果汁 800ml",150,null,"t_juice"]]}]}
+];
+const ITEMS={};MENU.forEach(c=>c.subs.forEach(s=>s.items.forEach(([id,n,p,tags,img])=>{ITEMS[id]={id,n,p,tags:tags||[],img:img||id,ext:c.ext||0}})));
+const lineName=k=>{const[id,L]=k.split("~");return ITEMS[id].n+(L?"（加大）":"")};
+const linePrice=k=>{const[id,L]=k.split("~");return ITEMS[id].p+(L?ITEMS[id].ext:0)};
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const money=n=>"$"+Number(n||0).toLocaleString("en-US");
+let cart={},open=true;
+const store={get(k,d){try{return JSON.parse(localStorage.getItem(k))??d}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
+function toast(t){const el=$("#toast");el.textContent=t;el.hidden=false;clearTimeout(toast.h);toast.h=setTimeout(()=>el.hidden=true,2200)}
+
+/* ---------- 菜單 ---------- */
+function stepper(k){return `<div class="step"><button type="button" data-k="${k}" data-d="-1" aria-label="減少">−</button><span class="q" data-q="${k}">0</span><button type="button" class="add" data-k="${k}" data-d="1" aria-label="增加">＋</button></div>`}
+function card(it){
+  return `<article class="dish" id="d_${it.id}"><div class="ph"><img src="img/${it.img}.jpg" alt="${esc(it.n)}" loading="lazy" width="240" height="240"></div>
+   <div class="nm">${esc(it.n)}</div>${it.tags.length?`<div class="tags">${it.tags.map(t=>`<span class="tag${/素/.test(t)?" veg":""}">${t}</span>`).join("")}</div>`:""}
+   <div class="row"><span class="price">${it.p}</span>${stepper(it.id)}</div>
+   ${it.ext?`<div class="big"><span>加大 +${it.ext}</span>${stepper(it.id+"~L")}</div>`:""}</article>`;
+}
+$("#cats").innerHTML=MENU.map(c=>`<a href="#${c.id}">${c.t}</a>`).join("");
+$("#menu").innerHTML=MENU.map(c=>`<section class="cat" id="${c.id}"><h2>${c.t}<em>${c.en}</em></h2>${c.note?`<p class="cat-note">${c.note}</p>`:""}
+ ${c.subs.map(s=>`${s.s?`<h3 class="sub">${s.s}</h3>`:""}<div class="grid${c.small?" small":""}">${s.items.map(([id])=>card(ITEMS[id])).join("")}</div>`).join("")}</section>`).join("");
+$("#menu").addEventListener("click",e=>{const b=e.target.closest("button[data-k]");if(!b||!open)return;
+  const k=b.dataset.k;cart[k]=Math.max(0,(cart[k]||0)+(+b.dataset.d));if(!cart[k])delete cart[k];refresh()});
+
+function cartLines(){return Object.entries(cart).filter(([,q])=>q>0).map(([k,q])=>({k,name:lineName(k),price:linePrice(k),qty:q,sub:linePrice(k)*q}))}
+function refresh(){
+  document.querySelectorAll("[data-q]").forEach(el=>{el.textContent=cart[el.dataset.q]||0});
+  document.querySelectorAll(".dish").forEach(el=>{const id=el.id.slice(2);el.classList.toggle("on",!!(cart[id]||cart[id+"~L"]))});
+  const ls=cartLines(),tot=ls.reduce((a,l)=>a+l.sub,0),n=ls.reduce((a,l)=>a+l.qty,0);
+  $("#cTotal").textContent=money(tot);
+  $("#cCount").textContent=n?`${n} 項：${ls.map(l=>l.name.replace(/義大利麵$/,"麵")+(l.qty>1?"×"+l.qty:"")).join("、")}`:(open?"尚未選擇餐點":"點餐已截止");
+  $("#checkout").disabled=!n||!open;
+  store.set("honmono_cart",cart);
+}
+
+/* ---------- 確認與送出 ---------- */
+function showSheet(html){$("#panel").innerHTML=html;$("#sheet").hidden=false;$("#panel").scrollTop=0}
+function hideSheet(){$("#sheet").hidden=true}
+$("#sheet").addEventListener("click",e=>{if(e.target.id==="sheet")hideSheet()});
+$("#checkout").onclick=()=>{
+  const ls=cartLines(),tot=ls.reduce((a,l)=>a+l.sub,0);
+  showSheet(`<h2>確認你的訂單</h2><ul class="lines">${ls.map(l=>`<li><span>${esc(l.name)} <span class="x">× ${l.qty}</span></span><span class="num">${money(l.sub)}</span></li>`).join("")}</ul>
+   <div class="total"><span>合計</span><b>${money(tot)}</b></div>
+   <div class="field"><label for="fName">姓名 <i>*</i></label><input id="fName" autocomplete="name" value="${esc(store.get("honmono_name",""))}" placeholder="請填寫真實姓名"></div>
+   <div class="field"><label for="fNote">備註（選填）</label><textarea id="fNote" placeholder="例：溫泉蛋加在咖哩上"></textarea></div>
+   <p class="msg err" id="fErr" hidden></p>
+   <div class="actions"><button type="button" class="btn ghost" id="fBack">繼續點餐</button><button type="button" class="btn" id="fSend">送出訂單</button></div>`);
+  $("#fBack").onclick=hideSheet;$("#fSend").onclick=send;
+};
+function showErr(t){const e=$("#fErr");e.textContent=t;e.hidden=false}
+async function send(){
+  const name=$("#fName").value.trim(),note=$("#fNote").value.trim();
+  if(!name){showErr("請填寫姓名，承辦人才知道是誰點的。");$("#fName").focus();return}
+  store.set("honmono_name",name);
+  const btn=$("#fSend");btn.disabled=true;btn.textContent="送出中…";
+  const ls=cartLines(),tot=ls.reduce((a,l)=>a+l.sub,0);
+  if(!SCRIPT_URL){setTimeout(()=>done({name,lines:ls,total:tot,demo:true}),500);return}
+  try{
+    // 用 text/plain 送出，避免瀏覽器多一次跨網域檢查
+    const res=await fetch(SCRIPT_URL,{method:"POST",body:JSON.stringify({name,note,cart}),headers:{"Content-Type":"text/plain;charset=utf-8"}});
+    const r=await res.json();
+    if(!r.ok)throw new Error(r.error||"送出失敗");
+    done({name,lines:r.lines,total:r.total,id:r.id});
+  }catch(err){
+    btn.disabled=false;btn.textContent="再試一次";
+    showErr((err&&err.message&&!/fetch|network|json/i.test(err.message))?err.message:"網路連線不穩，訂單還沒送出。請確認網路後再按一次。");
+  }
+}
+function done(r){
+  cart={};refresh();
+  showSheet(`<div class="ok">✓</div><h2 style="margin-top:8px">${r.demo?"（示範）":""}訂單已送出</h2>
+   <ul class="lines">${r.lines.map(l=>`<li><span>${esc(l.name)} <span class="x">× ${l.qty}</span></span><span class="num">${money(l.price*l.qty)}</span></li>`).join("")}</ul>
+   <div class="total"><span>${esc(r.name)} 合計</span><b>${money(r.total)}</b></div>
+   ${r.id?`<p class="msg">訂單編號 <b class="num">${esc(r.id)}</b>，可截圖留存。</p>`:""}
+   <div class="actions"><button type="button" class="btn ghost" id="again">再幫別人點一份</button><button type="button" class="btn" id="close">完成</button></div>`);
+  $("#again").onclick=()=>{hideSheet();scrollTo({top:0})};$("#close").onclick=hideSheet;
+}
+
+/* ---------- 讀取活動設定 ---------- */
+function applyCfg(c){
+  if(c.title)$("#evTitle").textContent=c.title,document.title=c.title;
+  if(c.sub)$("#evSub").textContent=c.sub;
+  open=c.open!==false;
+  $("#status").textContent=open?"開放點餐中":"點餐已截止";$("#status").classList.toggle("closed",!open);
+  $("#menu").classList.toggle("closedmask",!open);refresh();
+}
+const saved=store.get("honmono_cart",{});for(const k in saved)if(ITEMS[k.split("~")[0]]&&saved[k]>0)cart[k]=saved[k];
+refresh();
+if(!SCRIPT_URL){$("#demo").hidden=false}
+else fetch(SCRIPT_URL).then(r=>r.json()).then(applyCfg).catch(()=>{});
+</script>
+</body>
+</html>
