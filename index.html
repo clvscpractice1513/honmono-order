@@ -3,13 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>本物洋食團體點餐</title>
+<title>團體點餐</title>
 <meta name="description" content="看照片點餐，自動計算金額">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Noto+Sans+TC:wght@400;500;700;900&display=swap">
 <script>
-/* ===== 設定：把 Apps Script 部署後的網址貼在引號裡（結尾是 /exec） ===== */
-const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxevgEmsFGQn4Due95c58mF1ba5b1oaP1uSQfxSKwrljVvQHRA5F6PvafO7xBTLJqA/exec";
+/* ===== 唯一要改的地方：把 Apps Script 部署後的網址貼在引號裡（結尾是 /exec）=====
+   菜單、價格、照片檔名都在 Google 試算表的「菜單」工作表修改，不用改這個檔案。 */
+const SCRIPT_URL = "";
 </script>
 <style>
 :root{
@@ -109,30 +110,32 @@ h3.sub::after{content:"";flex:1;border-top:2px dotted var(--line)}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(90px + env(safe-area-inset-bottom,0px));z-index:30;background:var(--ink);color:var(--paper);padding:8px 16px;border-radius:999px;font-size:14px;font-weight:700}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto!important}}
 @media (max-width:420px){.grid,.grid.small{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.dish .nm{font-size:13.5px}.step button{width:32px;height:32px}}
+.dish.nophoto .nm{min-height:0;font-size:15.5px}
+.state{text-align:center;color:var(--muted);padding:48px 8px;font-size:15px}
+.state b{display:block;color:var(--ink);font-size:17px;margin-bottom:6px}
+.skel{background:var(--card);border:1.5px solid var(--line);border-radius:16px;height:250px;opacity:.6}
 </style>
 </head>
 <body>
 <div class="wrap">
   <header class="top">
     <div class="brand">
-      <small>HONMONO・本物洋食</small>
+      <small id="store">團體點餐</small>
       <h1 id="evTitle">活動便當訂購</h1>
       <p id="evSub">看照片點餐，系統自動計算金額。送出前請確認姓名。</p>
     </div>
-    <span class="status" id="status">開放點餐中</span>
+    <span class="status" id="status" hidden>開放點餐中</span>
   </header>
-  <p class="demo" id="demo" hidden>示範模式：尚未連接 Google 試算表，送出的訂單不會被記錄。</p>
-
-  <nav class="cats" id="cats"></nav>
-  <div class="howto">
-    <span><b>①</b> 按 ＋ 選主餐</span><span><b>②</b> 想吃多一點可點「加大」</span><span><b>③</b> 需要可加點配料、小食、飲品</span><span><b>④</b> 按下方「確認訂單」填姓名送出</span>
+  <nav class="cats" id="cats" hidden></nav>
+  <div class="howto" id="howto" hidden>
+    <span><b>①</b> 按 ＋ 選餐點</span><span><b>②</b> 可加大的餐點有「加大」按鈕</span><span><b>③</b> 按下方「確認訂單」</span><span><b>④</b> 填姓名送出</span>
   </div>
-  <main id="menu"></main>
+  <main id="menu"><div class="grid" style="padding-top:18px"><div class="skel"></div><div class="skel"></div><div class="skel"></div><div class="skel"></div></div></main>
 </div>
 
 <div class="cartbar">
   <div class="in">
-    <div class="sum"><b class="num" id="cTotal">$0</b><span id="cCount">尚未選擇餐點</span></div>
+    <div class="sum"><b class="num" id="cTotal">$0</b><span id="cCount">菜單載入中…</span></div>
     <button class="btn" id="checkout" disabled>確認訂單</button>
   </div>
 </div>
@@ -140,59 +143,53 @@ h3.sub::after{content:"";flex:1;border-top:2px dotted var(--line)}
 <div class="toast" id="toast" hidden></div>
 
 <script>
-/* 菜單資料：[代號, 名稱, 價格, 標籤, 共用照片]。改價格時，Code.gs 裡的價格也要一起改 */
-const MENU=[
- {id:"curry",t:"咖哩飯",en:"CURRY RICE",note:"日本職人秘傳熟成咖哩・飯類可加大 +$30",ext:30,subs:[{items:[
-  ["c_chicken","炸雞熟成咖哩",130],["c_beef","牛肉熟成咖哩",130],["c_pork","豬肉熟成咖哩",130],["c_veg","蔬菜熟成咖哩",130],["c_garden","歐風田園咖哩",170,["不辣素食","適合兒童"]]]}]},
- {id:"don",t:"洋風丼飯",en:"DONBURI",note:"飯類可加大 +$30",ext:30,subs:[{items:[
-  ["d_oyako","沒有親子鑑定的親子丼飯",160],["d_beef","炙燒起司醬油牛五花丼",170],["d_pork","黑豆豉豬肉丼飯",150]]}]},
- {id:"udon",t:"幸福烏龍麵",en:"UDON",note:"",subs:[{items:[
-  ["u_bacon","起司奶油培根烏龍麵",170],["u_pork","醬油豬肉炒烏龍麵",170],["u_curry","咖哩烏龍麵",120],["u_tsuke","醬油烏龍沾麵",120]]}]},
- {id:"pasta",t:"日式義大利麵",en:"SPAGHETTI",note:"麵類可加大 +$50",ext:50,subs:[
-  {s:"濃郁蕃茄系",items:[["p_bolo","肉醬義大利麵",100],["p_spicy","辣起司肉醬義大利麵",140,["辣"]],["p_tuna","聖女鮪魚義大利麵",130],["p_tomchick","番茄炸雞義大利麵",160]]},
-  {s:"大蒜橄欖油系",items:[["p_garlic","激辛紅油濃蒜義大利麵",100,["辣"]],["p_wafu","和風培根義大利麵",130]]},
-  {s:"鰹魚昆布醬油系",items:[["p_hiro","培根廣島燒風義大利麵",150],["p_hirochick","炸雞廣島燒風義大利麵",170],["p_oyster","豆豉鮮蚵義大利麵",170,["辣"]]]},
-  {s:"濃厚雞白湯奶油系",items:[["p_creamtuna","奶油鮪魚義大利麵",130],["p_sesame","胡麻豬肉義大利麵",150],["p_citrus","柑橘炸雞義大利麵",170],["p_carbo","奶油培根義大利麵",160],["p_spicycheese","辣奶油起司炸雞義大利麵",170,["辣"]],["p_basil","羅勒奶油炸雞義大利麵",170]]},
-  {s:"田園系（素食）",items:[["p_vegcream","奶油蔬菜義大利麵",150,["素食"]],["p_vegcurry","辛香咖哩蔬食義大利麵",150,["素食"]]]}]},
- {id:"side",t:"單點小食",en:"À LA CARTE",note:"",subs:[{items:[
-  ["a_fries","炸薯條",60],["a_salad","胡麻生鮮沙拉",80],["a_karaage","日式唐揚炸雞（6塊）",80],["a_fish","炸白肉魚排（2片）",90],["a_curryk","和風咖哩可樂餅（2片）",90],["a_cheesek","炙燒乳酪可樂餅（2片）",120]]}]},
- {id:"top",t:"配料・湯品・飲料",en:"TOPPING & DRINKS",note:"配料要加在哪一份主餐，請在備註寫明",small:true,subs:[{items:[
-  ["t_cheese","起司片（2片）",40],["t_egg","溏心蛋",30],["t_onsen","溫泉蛋",30],["t_beef","牛肉",50],["t_pork","豬肉",50],["t_chicken","炸雞（3塊）",40],["t_veg","當季時蔬",40],["t_korokke","可樂餅（2片）",60],
-  ["t_miso","味噌湯",40],["t_tofu","豆花",30],["t_tea","瓶裝茶／汽水",25],["t_juice","果汁 250ml",60],["t_juiceL","果汁 800ml",150,null,"t_juice"]]}]}
-];
-const ITEMS={};MENU.forEach(c=>c.subs.forEach(s=>s.items.forEach(([id,n,p,tags,img])=>{ITEMS[id]={id,n,p,tags:tags||[],img:img||id,ext:c.ext||0}})));
-const lineName=k=>{const[id,L]=k.split("~");return ITEMS[id].n+(L?"（加大）":"")};
-const linePrice=k=>{const[id,L]=k.split("~");return ITEMS[id].p+(L?ITEMS[id].ext:0)};
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const money=n=>"$"+Number(n||0).toLocaleString("en-US");
-let cart={},open=true;
 const store={get(k,d){try{return JSON.parse(localStorage.getItem(k))??d}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
-function toast(t){const el=$("#toast");el.textContent=t;el.hidden=false;clearTimeout(toast.h);toast.h=setTimeout(()=>el.hidden=true,2200)}
+let ITEMS=[],BY={},cart={},open=true,ready=false;
 
-/* ---------- 菜單 ---------- */
-function stepper(k){return `<div class="step"><button type="button" data-k="${k}" data-d="-1" aria-label="減少">−</button><span class="q" data-q="${k}">0</span><button type="button" class="add" data-k="${k}" data-d="1" aria-label="增加">＋</button></div>`}
-function card(it){
-  return `<article class="dish" id="d_${it.id}"><div class="ph"><img src="img/${it.img}.jpg" alt="${esc(it.n)}" loading="lazy" width="240" height="240"></div>
-   <div class="nm">${esc(it.n)}</div>${it.tags.length?`<div class="tags">${it.tags.map(t=>`<span class="tag${/素/.test(t)?" veg":""}">${t}</span>`).join("")}</div>`:""}
-   <div class="row"><span class="price">${it.p}</span>${stepper(it.id)}</div>
-   ${it.ext?`<div class="big"><span>加大 +${it.ext}</span>${stepper(it.id+"~L")}</div>`:""}</article>`;
+/* 購物車的 key：品名；加大為「品名~L」 */
+const baseOf=k=>k.endsWith("~L")?k.slice(0,-2):k;
+const lineName=k=>BY[baseOf(k)].name+(k.endsWith("~L")?"（加大）":"");
+const linePrice=k=>BY[baseOf(k)].price+(k.endsWith("~L")?BY[baseOf(k)].ext:0);
+const imgSrc=v=>!v?"":/^https?:\/\//i.test(v)?v:"img/"+v;
+
+/* ---------- 由試算表資料畫出菜單 ---------- */
+function buildMenu(menu){
+  ITEMS=menu;BY={};menu.forEach((it,i)=>{it.i=i;BY[it.name]=it});
+  const cats=[];menu.forEach(it=>{let c=cats.find(c=>c.t===it.cat);if(!c)cats.push(c={t:it.cat,items:[]});c.items.push(it)});
+  if(!cats.length){$("#menu").innerHTML=`<div class="state"><b>目前沒有可點的餐點</b>請承辦人到試算表「菜單」工作表新增品項並勾選「上架」。</div>`;return}
+  $("#cats").innerHTML=cats.map((c,i)=>`<a href="#cat${i}">${esc(c.t)}</a>`).join("");
+  $("#cats").hidden=cats.length<2;$("#howto").hidden=false;
+  $("#menu").innerHTML=cats.map((c,i)=>{
+    const exts=[...new Set(c.items.map(it=>it.ext))];
+    const note=exts.length===1&&exts[0]>0?`本類可加大 +$${exts[0]}`:"";
+    const subs=[];c.items.forEach(it=>{let s=subs.find(s=>s.s===it.sub);if(!s)subs.push(s={s:it.sub,items:[]});s.items.push(it)});
+    return `<section class="cat" id="cat${i}"><h2>${esc(c.t)}</h2>${note?`<p class="cat-note">${note}</p>`:""}
+      ${subs.map(s=>`${s.s?`<h3 class="sub">${esc(s.s)}</h3>`:""}<div class="grid">${s.items.map(card).join("")}</div>`).join("")}</section>`}).join("");
 }
-$("#cats").innerHTML=MENU.map(c=>`<a href="#${c.id}">${c.t}</a>`).join("");
-$("#menu").innerHTML=MENU.map(c=>`<section class="cat" id="${c.id}"><h2>${c.t}<em>${c.en}</em></h2>${c.note?`<p class="cat-note">${c.note}</p>`:""}
- ${c.subs.map(s=>`${s.s?`<h3 class="sub">${s.s}</h3>`:""}<div class="grid${c.small?" small":""}">${s.items.map(([id])=>card(ITEMS[id])).join("")}</div>`).join("")}</section>`).join("");
-$("#menu").addEventListener("click",e=>{const b=e.target.closest("button[data-k]");if(!b||!open)return;
+function stepper(k){return `<div class="step"><button type="button" data-k="${esc(k)}" data-d="-1" aria-label="減少">−</button><span class="q" data-q="${esc(k)}">0</span><button type="button" class="add" data-k="${esc(k)}" data-d="1" aria-label="增加">＋</button></div>`}
+function card(it){
+  const src=imgSrc(it.img);
+  return `<article class="dish${src?"":" nophoto"}" data-n="${esc(it.name)}">${src?`<div class="ph"><img src="${esc(src)}" alt="${esc(it.name)}" loading="lazy" width="240" height="240" onerror="this.parentNode.remove();this.closest('.dish').classList.add('nophoto')"></div>`:""}
+   <div class="nm">${esc(it.name)}</div>${it.tags.length?`<div class="tags">${it.tags.map(t=>`<span class="tag${/素/.test(t)?" veg":""}">${esc(t)}</span>`).join("")}</div>`:""}
+   <div class="row"><span class="price">${it.price}</span>${stepper(it.name)}</div>
+   ${it.ext?`<div class="big"><span>加大 +${it.ext}</span>${stepper(it.name+"~L")}</div>`:""}</article>`;
+}
+$("#menu").addEventListener("click",e=>{const b=e.target.closest("button[data-k]");if(!b||!open||!ready)return;
   const k=b.dataset.k;cart[k]=Math.max(0,(cart[k]||0)+(+b.dataset.d));if(!cart[k])delete cart[k];refresh()});
 
-function cartLines(){return Object.entries(cart).filter(([,q])=>q>0).map(([k,q])=>({k,name:lineName(k),price:linePrice(k),qty:q,sub:linePrice(k)*q}))}
+function cartLines(){return Object.entries(cart).filter(([k,q])=>q>0&&BY[baseOf(k)]).map(([k,q])=>({k,name:lineName(k),price:linePrice(k),qty:q,sub:linePrice(k)*q}))}
 function refresh(){
+  if(!ready)return;
   document.querySelectorAll("[data-q]").forEach(el=>{el.textContent=cart[el.dataset.q]||0});
-  document.querySelectorAll(".dish").forEach(el=>{const id=el.id.slice(2);el.classList.toggle("on",!!(cart[id]||cart[id+"~L"]))});
+  document.querySelectorAll(".dish").forEach(el=>{const n=el.dataset.n;el.classList.toggle("on",!!(cart[n]||cart[n+"~L"]))});
   const ls=cartLines(),tot=ls.reduce((a,l)=>a+l.sub,0),n=ls.reduce((a,l)=>a+l.qty,0);
   $("#cTotal").textContent=money(tot);
-  $("#cCount").textContent=n?`${n} 項：${ls.map(l=>l.name.replace(/義大利麵$/,"麵")+(l.qty>1?"×"+l.qty:"")).join("、")}`:(open?"尚未選擇餐點":"點餐已截止");
+  $("#cCount").textContent=n?`${n} 項：${ls.map(l=>l.name+(l.qty>1?"×"+l.qty:"")).join("、")}`:(open?"尚未選擇餐點":"點餐已截止");
   $("#checkout").disabled=!n||!open;
-  store.set("honmono_cart",cart);
+  store.set("order_cart",cart);
 }
 
 /* ---------- 確認與送出 ---------- */
@@ -203,8 +200,8 @@ $("#checkout").onclick=()=>{
   const ls=cartLines(),tot=ls.reduce((a,l)=>a+l.sub,0);
   showSheet(`<h2>確認你的訂單</h2><ul class="lines">${ls.map(l=>`<li><span>${esc(l.name)} <span class="x">× ${l.qty}</span></span><span class="num">${money(l.sub)}</span></li>`).join("")}</ul>
    <div class="total"><span>合計</span><b>${money(tot)}</b></div>
-   <div class="field"><label for="fName">姓名 <i>*</i></label><input id="fName" autocomplete="name" value="${esc(store.get("honmono_name",""))}" placeholder="請填寫真實姓名"></div>
-   <div class="field"><label for="fNote">備註（選填）</label><textarea id="fNote" placeholder="例：溫泉蛋加在咖哩上"></textarea></div>
+   <div class="field"><label for="fName">姓名 <i>*</i></label><input id="fName" autocomplete="name" value="${esc(store.get("order_name",""))}" placeholder="請填寫真實姓名"></div>
+   <div class="field"><label for="fNote">備註（選填）</label><textarea id="fNote" placeholder="例：配料加在哪一份、不要辣"></textarea></div>
    <p class="msg err" id="fErr" hidden></p>
    <div class="actions"><button type="button" class="btn ghost" id="fBack">繼續點餐</button><button type="button" class="btn" id="fSend">送出訂單</button></div>`);
   $("#fBack").onclick=hideSheet;$("#fSend").onclick=send;
@@ -213,43 +210,44 @@ function showErr(t){const e=$("#fErr");e.textContent=t;e.hidden=false}
 async function send(){
   const name=$("#fName").value.trim(),note=$("#fNote").value.trim();
   if(!name){showErr("請填寫姓名，承辦人才知道是誰點的。");$("#fName").focus();return}
-  store.set("honmono_name",name);
+  store.set("order_name",name);
   const btn=$("#fSend");btn.disabled=true;btn.textContent="送出中…";
-  const ls=cartLines(),tot=ls.reduce((a,l)=>a+l.sub,0);
-  if(!SCRIPT_URL){setTimeout(()=>done({name,lines:ls,total:tot,demo:true}),500);return}
   try{
-    // 用 text/plain 送出，避免瀏覽器多一次跨網域檢查
     const res=await fetch(SCRIPT_URL,{method:"POST",body:JSON.stringify({name,note,cart}),headers:{"Content-Type":"text/plain;charset=utf-8"}});
     const r=await res.json();
     if(!r.ok)throw new Error(r.error||"送出失敗");
     done({name,lines:r.lines,total:r.total,id:r.id});
   }catch(err){
     btn.disabled=false;btn.textContent="再試一次";
-    showErr((err&&err.message&&!/fetch|network|json/i.test(err.message))?err.message:"網路連線不穩，訂單還沒送出。請確認網路後再按一次。");
+    showErr((err&&err.message&&!/fetch|network|json|load/i.test(err.message))?err.message:"網路連線不穩，訂單還沒送出。請確認網路後再按一次。");
   }
 }
 function done(r){
   cart={};refresh();
-  showSheet(`<div class="ok">✓</div><h2 style="margin-top:8px">${r.demo?"（示範）":""}訂單已送出</h2>
+  showSheet(`<div class="ok">✓</div><h2 style="margin-top:8px">訂單已送出</h2>
    <ul class="lines">${r.lines.map(l=>`<li><span>${esc(l.name)} <span class="x">× ${l.qty}</span></span><span class="num">${money(l.price*l.qty)}</span></li>`).join("")}</ul>
    <div class="total"><span>${esc(r.name)} 合計</span><b>${money(r.total)}</b></div>
-   ${r.id?`<p class="msg">訂單編號 <b class="num">${esc(r.id)}</b>，可截圖留存。</p>`:""}
+   <p class="msg">訂單編號 <b class="num">${esc(r.id)}</b>，可截圖留存。</p>
    <div class="actions"><button type="button" class="btn ghost" id="again">再幫別人點一份</button><button type="button" class="btn" id="close">完成</button></div>`);
   $("#again").onclick=()=>{hideSheet();scrollTo({top:0})};$("#close").onclick=hideSheet;
 }
 
-/* ---------- 讀取活動設定 ---------- */
-function applyCfg(c){
-  if(c.title)$("#evTitle").textContent=c.title,document.title=c.title;
+/* ---------- 啟動：向試算表讀取設定與菜單 ---------- */
+function fail(title,msg){$("#menu").innerHTML=`<div class="state"><b>${title}</b>${msg}</div>`;$("#cCount").textContent="目前無法點餐"}
+function start(c){
+  if(c.store){$("#store").textContent=c.store;document.title=c.store+"團體點餐"}
+  if(c.title){$("#evTitle").textContent=c.title;document.title=c.title}
   if(c.sub)$("#evSub").textContent=c.sub;
   open=c.open!==false;
-  $("#status").textContent=open?"開放點餐中":"點餐已截止";$("#status").classList.toggle("closed",!open);
-  $("#menu").classList.toggle("closedmask",!open);refresh();
+  $("#status").hidden=false;$("#status").textContent=open?"開放點餐中":"點餐已截止";$("#status").classList.toggle("closed",!open);
+  buildMenu(Array.isArray(c.menu)?c.menu:[]);
+  $("#menu").classList.toggle("closedmask",!open);
+  ready=true;
+  const saved=store.get("order_cart",{});for(const k in saved)if(BY[baseOf(k)]&&saved[k]>0&&(!k.endsWith("~L")||BY[baseOf(k)].ext))cart[k]=saved[k];
+  refresh();
 }
-const saved=store.get("honmono_cart",{});for(const k in saved)if(ITEMS[k.split("~")[0]]&&saved[k]>0)cart[k]=saved[k];
-refresh();
-if(!SCRIPT_URL){$("#demo").hidden=false}
-else fetch(SCRIPT_URL).then(r=>r.json()).then(applyCfg).catch(()=>{});
+if(!SCRIPT_URL)fail("還沒連接 Google 試算表","請承辦人打開 index.html，把 Apps Script 的網址貼進 SCRIPT_URL 的引號裡。");
+else fetch(SCRIPT_URL).then(r=>r.json()).then(start).catch(()=>fail("菜單載入失敗","請確認網路後重新整理頁面。若持續發生，請通知承辦人。"));
 </script>
 </body>
 </html>
